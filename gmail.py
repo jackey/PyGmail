@@ -1,3 +1,4 @@
+import os.path
 # -*- coding: utf-8 -*-
 
 
@@ -25,6 +26,7 @@ def is_media(file):
 
 def cache_mail(uuid, gmail_mail, filepath):
   """缓存邮件内容"""
+  print uuid
   # From
   mfrom = email.utils.parseaddr(gmail_mail["From"])
   # Subject
@@ -37,15 +39,18 @@ def cache_mail(uuid, gmail_mail, filepath):
   cache_dir = os.path.join(basepath, "caches")
   if not os.path.isdir(cache_dir):
     os.mkdir(cache_dir)
-  else:
-    return False
   
   cache_file = os.path.join(cache_dir, uuid);
+  if os.path.isfile(cache_file):
+    return False
   cache_data = [uuid, mfrom, subject, filepath]
   sdata = pickle.dumps(cache_data)
-  fp = open(cache_file, "w")
+  fp = open(cache_file, "wb")
   fp.write(sdata)
   fp.close()
+  
+  
+  return cache_data
 
 def fetching_gamil(user, password):
   attachmentpath = "./attachments";
@@ -84,7 +89,7 @@ def fetching_gamil(user, password):
       if part.get("Content-Disposition") is None:
         continue
 
-      filename = part.get_filename()
+      filename = "".join(part.get_filename().split())
       if bool(filename):
         filepath = os.path.join(attachmentpath, filename)
         if not os.path.isfile(filepath):
@@ -107,7 +112,10 @@ if __name__ == "__main__":
   
   account = dict(config.items("section"))
   
-  fetching_gamil(account['user'], account['pass'])
+  try:
+    fetching_gamil(account['user'], account['pass'])
+  except:
+    print "Exception when fetch email !"
 
     
   
