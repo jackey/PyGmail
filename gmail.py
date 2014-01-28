@@ -20,7 +20,9 @@ def is_media(file):
   stdout = subprocess.PIPE).communicate()[0]
   mime = mime.rstrip()
   
-  if mime in ["image/jpeg", "image/png", "image/jpg"]:
+  print mime
+  
+  if mime in ["image/jpeg", "image/png", "image/jpg", "image/gif"]:
     return True
   return False
 
@@ -53,6 +55,8 @@ def cache_mail(uuid, gmail_mail, filepath):
   return cache_data
 
 def fetching_gamil(user, password):
+  # 只取最近10条邮件
+  num = 10
   attachmentpath = "./attachments";
   attachmentpath = os.path.abspath(attachmentpath)
   if not os.path.isdir(attachmentpath):
@@ -72,12 +76,15 @@ def fetching_gamil(user, password):
   # 只查询前2天的邮件 (多查询几天免得漏掉邮件)
   date = (datetime.date.today() - datetime.timedelta(2)).strftime("%d-%b-%Y")
   print "Fetching email since %s" %(date)
-  result, data = conn.uid("search", None, "(SENTSINCE {date})".format(date=date))
+  #result, data = conn.uid("search", None, "(SENTSINCE {date})".format(date=date))
+  result, data = conn.uid("search", None, "ALL")
 
   ids = data[0]
   id_list = ids.split()
+  
+  print id_list[len(id_list) - num : ]
 
-  for eid in id_list:
+  for eid in id_list[len(id_list) - num: ]:
     result, email_data = conn.uid("fetch", eid, "(RFC822)")
 
     gmail_mail = email.message_from_string(email_data[0][1])
@@ -114,8 +121,9 @@ if __name__ == "__main__":
   
   try:
     fetching_gamil(account['user'], account['pass'])
-  except:
+  except Exception as e:
     print "Exception when fetch email !"
+    print e
 
     
   
