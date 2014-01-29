@@ -1,6 +1,4 @@
-import os.path
 # -*- coding: utf-8 -*-
-
 
 import imaplib, email, base64
 from email.header import decode_header
@@ -10,6 +8,8 @@ import subprocess
 import pickle
 import datetime
 from ConfigParser import ConfigParser
+import os.path
+import poster
 
 basepath = os.path.abspath(os.path.dirname(__file__))
 
@@ -28,7 +28,7 @@ def is_media(file):
 
 def cache_mail(uuid, gmail_mail, filepath):
   """缓存邮件内容"""
-  print uuid
+  print "mail id [%s] is being to cached " %(uuid)
   # From
   mfrom = email.utils.parseaddr(gmail_mail["From"])
   # Subject
@@ -51,8 +51,21 @@ def cache_mail(uuid, gmail_mail, filepath):
   fp.write(sdata)
   fp.close()
   
-  
   return cache_data
+
+def post_node():
+  pass
+
+def is_cached(uuid):
+  cache_dir = os.path.join(basepath, "caches")
+  
+  if not os.path.isdir(cache_dir):
+    os.mkdir(cache_dir)
+  
+  cache_file = os.path.join(cache_dir, uuid)
+  if not os.path.isfile(cache_file):
+    return False
+  return True
 
 def fetching_gamil(user, password):
   # 只取最近10条邮件
@@ -65,6 +78,7 @@ def fetching_gamil(user, password):
   conn = imaplib.IMAP4_SSL("imap.gmail.com", 993)
   try:
     conn.login(user, password)
+    print "login in mail account [%s] success" %(user)
     conn.select("inbox")
   except:
     print "Error when login with %s" %(user)
@@ -82,7 +96,7 @@ def fetching_gamil(user, password):
   ids = data[0]
   id_list = ids.split()
   
-  print id_list[len(id_list) - num : ]
+  print "ids [%s] of mail that be fetched " %(id_list[len(id_list) - num : ])
 
   for eid in id_list[len(id_list) - num: ]:
     result, email_data = conn.uid("fetch", eid, "(RFC822)")
@@ -96,6 +110,8 @@ def fetching_gamil(user, password):
       if part.get("Content-Disposition") is None:
         continue
 
+      if part.get_filename() is None:
+        continue
       filename = "".join(part.get_filename().split())
       if bool(filename):
         filepath = os.path.join(attachmentpath, filename)
@@ -105,21 +121,31 @@ def fetching_gamil(user, password):
           fp.close()
 
         if is_media(filepath):
-          data = cache_mail(eid, gmail_mail, filepath)
-          if data:
-            # 如果保存成功就发送数据到后台 保存
-            pass
+          # 在这里，先看是否已经有了缓存文件，如果有则不去发送图片到网站了
+          if is_cached(eid):
+            print "Mail with uuid [%s] is cached " %(eid)
+            continue
+          else:
+          # 如果没有则先缓存图片再发送图片到网站
+            data = cache_mail(eid, gmail_mail, filepath)
+            if data:
+              # 如果保存成功就发送数据到后台 保存
+              pass
 
   conn.close()
   conn.logout()
 
 if __name__ == "__main__":
-  config = ConfigParser()
-  config.read("count.ini")
-  
-  account = dict(config.items("section"))
-  
   try:
+    config = ConfigParser()
+    config.read("setting.ini")
+  except Exception as e:
+    print "setting.ini is not exists!"
+    sys.exit(1)
+  
+  account = dict(config.items("mailaccount"))
+  try:
+    print "begin fetch mail from account [%s] " %(account['user'])
     fetching_gamil(account['user'], account['pass'])
   except Exception as e:
     print "Exception when fetch email !"
