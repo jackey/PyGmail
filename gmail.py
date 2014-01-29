@@ -29,6 +29,56 @@ def post_media_to_bankwall(desc="description", user="xx@xx.com", media="/path/to
   #res = json.loads(res)
   print res
 
+def reply_mail(mail_obj):
+  print "begin to reply email to [%s] "  %(mail_obj["From"] or mail_obj["Reply-To"])
+  original = mail_obj
+  for part in original.walk():
+    if (part.get("Content-Disposition")
+      and part.get("Content-Disposition").startswith("attachment")):
+        part.set_type("text/plain")
+        part.set_payload("Attachment removed: %s (%s, %d bytes)"
+                         %(part.get_filename(), 
+                           part.get_content_type(), 
+                           len(part.get_payload(decode=True))))
+        del part["Content-Disposition"]
+        del part["Content-Transfer-Encoding"]
+
+  from email.mime.multipart import MIMEMultipart
+  from email.mime.text import MIMEText
+  from email.mime.message import MIMEMessage
+
+
+  new = MIMEMultipart("mixed")
+  body = MIMEMultipart("alternative")
+
+  config = dict(load_config().items("reply"))
+  body.attach(MIMEText(config["body"], "plain"))
+  body.attach(MIMEText("<p>"+ str(config["body"]) + "</p>", "html"))
+  new.attach(body)
+
+  new["Message-ID"] = email.utils.make_msgid()
+  new["In-Reply-To"] = original["Message-ID"]
+  new["References"] = original["Message-ID"]
+  new["Subject"] = "Re: "+original["Subject"]
+  new["To"] = original["Reply-To"] or original["From"]
+  new["From"] = "jziwenchen@gmail.com"
+
+  # new.attach(MIMEMessage(original))
+
+  import smtplib
+  mail_client = smtplib.SMTP("smtp.gmail.com", 587)
+  mail_client.ehlo()
+  mail_client.starttls()
+  mail_client.ehlo()
+
+  config = dict(load_config().items("smtp"))
+  mail_client.login(config["user"], config["pass"])
+  mail_client.sendmail(config["from"], [new["To"]], new.as_string())
+
+  mail_client.quit()
+
+  print "replied email to [%s] "  %(mail_obj["From"] or mail_obj["Reply-To"])
+  
 
 def is_media(file):
   """ 判断是否是Media (图片/视频) """
@@ -160,23 +210,53 @@ def fetching_gamil(user, password):
               subject = gmail_mail["Subject"]
               subject, encoding = decode_header(subject)[0]
               post_media_to_bankwall(desc=subject, user=mfrom, media=filepath)
+
+              reply_mail(gmail_mail)
         else:
           print "File [%s] is not media " %(filepath)
   conn.close()
   conn.logout()
 
-if __name__ == "__main__":
+def load_config():
   try:
     config = ConfigParser()
     config.read("setting.ini")
+
+    return config
   except Exception as e:
     print "setting.ini is not exists!"
     sys.exit(1)
-  
+
+if __name__ == "__main__":
+  config = load_config()
   account = dict(config.items("mailaccount"))
+
+  # There's only one process do fetch job in each time
+  if not os.path.isfile(".lock"):
+    f = open(".lock", "w+")
+    f.close()
+  
+  f = open(".lock", "r+")
+  p = f.read()
+  print p
+  # If empty, that means we can run it
+  if len(p) == 0:
+    f.write("True")
+  # Otherwise, we exit it imedirecly
+  else:
+    print "Another process is runing"
+    sys.exit(0)
+
+  f.close()
+
   try:
     print "begin fetch mail from account [%s] " %(account['user'])
     fetching_gamil(account['user'], account['pass'])
+
+    # After finished fetching mail, we empty .lock file
+    with open(".lock", "w+") as f:
+      f.write("")
+
   except Exception as e:
     print "Exception when fetch email !"
     print e
