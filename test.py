@@ -18,4 +18,7 @@ if __name__ == "__main__":
     
     datagen, headers = multipart_encode({"image1": open(os.path.join(basepath ,"attachments/like.png"), "rb")})
     request = urllib2.Request("http://bankapi.local/node/postbymail", datagen, headers)
-    print urllib2.urlopen(request).read()
+    res = urllib2.urlopen(request).read()
+    import json
+    res = json.loads(res)
+    print res
