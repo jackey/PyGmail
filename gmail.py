@@ -24,12 +24,12 @@ def post_media_to_bankwall(desc="description", user="xx@xx.com", media="/path/to
   datagen, headers = multipart_encode({"photo": open(os.path.join(basepath , media), "rb"), 
     "desc": desc,
     "user": user})
-  request = urllib2.Request("http://bankapi.local/node/postbymail", datagen, headers)
+  request = urllib2.Request("http://bankwall.local/node/postbymail", datagen, headers)
   res = urllib2.urlopen(request).read()
-  #res = json.loads(res)
-  print res
+  res = json.loads(res)
+  return res["success"]
 
-def reply_mail(mail_obj):
+def reply_mail(mail_obj, is_success=True):
   print "begin to reply email to [%s] "  %(mail_obj["From"] or mail_obj["Reply-To"])
   original = mail_obj
   for part in original.walk():
@@ -52,7 +52,8 @@ def reply_mail(mail_obj):
   body = MIMEMultipart("alternative")
 
   config = dict(load_config().items("reply"))
-  body.attach(MIMEText(config["body"], "plain"))
+  body_reply = config['body'] if is_success else config["failed"]
+  body.attach(MIMEText(body_reply, "plain"))
   body.attach(MIMEText("<p>"+ str(config["body"]) + "</p>", "html"))
   new.attach(body)
 
@@ -209,9 +210,8 @@ def fetching_gamil(user, password):
               # Subject
               subject = gmail_mail["Subject"]
               subject, encoding = decode_header(subject)[0]
-              post_media_to_bankwall(desc=subject, user=mfrom, media=filepath)
-
-              reply_mail(gmail_mail)
+              ret = post_media_to_bankwall(desc=subject, user=mfrom, media=filepath)
+              reply_mail(gmail_mail, ret)
         else:
           print "File [%s] is not media " %(filepath)
   conn.close()
@@ -259,6 +259,7 @@ if __name__ == "__main__":
 
   except Exception as e:
     print "Exception when fetch email !"
+    os.unlink(".lock")
     print e
 
     
