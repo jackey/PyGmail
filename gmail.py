@@ -21,7 +21,7 @@ def post_media_to_bankwall(desc="description", user="xx@xx.com", media="/path/to
 
   register_openers()
   
-  datagen, headers = multipart_encode({"photo": open(os.path.join(basepath ,"attachments/like.png"), "rb"), 
+  datagen, headers = multipart_encode({"photo": open(os.path.join(basepath , media), "rb"), 
     "desc": desc,
     "user": user})
   request = urllib2.Request("http://bankapi.local/node/postbymail", datagen, headers)
