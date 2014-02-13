@@ -9,6 +9,12 @@ import pickle
 import datetime
 from ConfigParser import ConfigParser
 import os.path
+from smtplib import SMTP
+
+reload(sys)
+sys.setdefaultencoding('utf-8')
+
+print sys.getdefaultencoding()
 
 basepath = os.path.abspath(os.path.dirname(__file__))
 
@@ -24,72 +30,41 @@ def post_media_to_bankwall(desc="description", user="xx@xx.com", media="/path/to
   datagen, headers = multipart_encode({"photo": open(os.path.join(basepath , media), "rb"), 
     "desc": desc,
     "user": user})
-  request = urllib2.Request("http://bankwall.local/node/postbymail", datagen, headers)
+  request = urllib2.Request("http://64.207.184.106/sgwall/api/node/postbymail", datagen, headers)
   res = urllib2.urlopen(request).read()
   res = json.loads(res)
-  return res["success"]
+  print res["message"]
+  return res["message"]
 
 def reply_mail(mail_obj, is_success=True):
   print "begin to reply email to [%s] "  %(mail_obj["From"] or mail_obj["Reply-To"])
   original = mail_obj
-  for part in original.walk():
-    if (part.get("Content-Disposition")
-      and part.get("Content-Disposition").startswith("attachment")):
-        part.set_type("text/plain")
-        part.set_payload("Attachment removed: %s (%s, %d bytes)"
-                         %(part.get_filename(), 
-                           part.get_content_type(), 
-                           len(part.get_payload(decode=True))))
-        del part["Content-Disposition"]
-        del part["Content-Transfer-Encoding"]
-
-  from email.mime.multipart import MIMEMultipart
-  from email.mime.text import MIMEText
-  from email.mime.message import MIMEMessage
-
-
-  new = MIMEMultipart("mixed")
-  body = MIMEMultipart("alternative")
-
-  config = dict(load_config().items("reply"))
-  body_reply = config['body'] if is_success else config["failed"]
-  body.attach(MIMEText(body_reply, "plain"))
-  body.attach(MIMEText("<p>"+ str(config["body"]) + "</p>", "html"))
-  new.attach(body)
-
-  new["Message-ID"] = email.utils.make_msgid()
-  new["In-Reply-To"] = original["Message-ID"]
-  new["References"] = original["Message-ID"]
-  new["Subject"] = "Re: "+original["Subject"]
-  new["To"] = original["Reply-To"] or original["From"]
-  new["From"] = "jziwenchen@gmail.com"
-
-  # new.attach(MIMEMessage(original))
-
-  import smtplib
-  mail_client = smtplib.SMTP("smtp.gmail.com", 587)
-  mail_client.ehlo()
-  mail_client.starttls()
-  mail_client.ehlo()
-
   config = dict(load_config().items("smtp"))
-  mail_client.login(config["user"], config["pass"])
-  mail_client.sendmail(config["from"], [new["To"]], new.as_string())
-
-  mail_client.quit()
-
+  smtp = SMTP()
+  smtp.connect('smtp.gmail.com', 587)
+  smtp.starttls()
+  smtp.login(config["user"], config["pass"])
+  from_addr = "testdev@fuel-it-up.com"
+  to_addr = original["Reply-To"] or original["From"]
+  subj = "Re: "+original["Subject"]
+  date = datetime.datetime.now().strftime( "%d/%m/%Y %H:%M" )
+  message_text = "Hello\nThis is a mail from your server\n\nBye\n"
+  msg = "From: %s\nTo: %s\nSubject: %s\nDate: %s\n\n%s" % ( from_addr, to_addr, subj, date, is_success.replace('\\n','\n') )
+  smtp.sendmail(from_addr, to_addr, msg)
+  smtp.quit()
   print "replied email to [%s] "  %(mail_obj["From"] or mail_obj["Reply-To"])
   
 
 def is_media(file):
   """ 判断是否是Media (图片/视频) """
-  cmd = "/usr/bin/file -b --mime-type %s" % (file)
+  file = file.replace("(", "\(").replace(")", "\)")
+  cmd = "/usr/bin/file -b --mime %s" % (file)
   mime = subprocess.Popen(cmd, shell=True, \
   stdout = subprocess.PIPE).communicate()[0]
   mime = mime.rstrip()
   print "mime is [%s]" %(mime)
   
-  if mime in ["image/jpeg", "image/png", "image/jpg", "image/gif"]:
+  if mime in ["image/jpeg", "image/png", "image/jpg", "image/gif", "video/mov", "video/wmv", "video/mp4", "video/avi", "video/3gp", "video/mpeg", "video/mpg", "application/octet-stream"]:
     return True
   return False
 
@@ -120,6 +95,18 @@ def cache_mail(uuid, gmail_mail, filepath):
   
   return cache_data
 
+def rm_cache_mail(uuid):
+  cache_dir = os.path.join(basepath, "caches")
+  if not os.path.isdir(cache_dir):
+    os.mkdir(cache_dir)
+  
+  cache_file = os.path.join(cache_dir, uuid);
+  if os.path.isfile(cache_file) is False:
+    return True
+
+  os.unlink(cache_file)
+  return True
+
 def is_cached(uuid):
   cache_dir = os.path.join(basepath, "caches")
   
@@ -130,6 +117,17 @@ def is_cached(uuid):
   if not os.path.isfile(cache_file):
     return False
   return True
+
+def reconnect_gmail(user, password):
+  conn = imaplib.IMAP4_SSL("imap.gmail.com", 993)
+  try:
+    conn.login(user, password)
+    print "login in mail account [%s] success" %(user)
+    conn.select("inbox")
+  except:
+    print "Error when login with %s" %(user)
+    return None
+  return conn
 
 def fetching_gamil(user, password):
   # 只取最近10条邮件
@@ -163,7 +161,19 @@ def fetching_gamil(user, password):
   print "ids [%s] of mail that be fetched " %(id_list)
 
   for eid in id_list:
-    result, email_data = conn.uid("fetch", eid, "(RFC822)")
+      
+    # 对取每个邮件进行异常处理
+    try:
+      result, email_data = conn.uid("fetch", eid, "(RFC822)")
+    except:
+        while (True):
+          conn = reconnect_gmail(user, password)
+          if conn is None:
+              continue
+          result, email_data = conn.uid("fetch", eid, "(RFC822)")
+          break
+    if result != "OK":
+        continue
 
     gmail_mail = email.message_from_string(email_data[0][1])
 
@@ -177,14 +187,14 @@ def fetching_gamil(user, password):
       if part.get_filename() is None:
         continue
       filename = "".join(part.get_filename().split())
-
-      # new file name
       import time
-      nowtimestamp = int(time.time())
-      filename = str(nowtimestamp) + filename
+      nowtimestamp = unicode(int(time.time())).encode("utf-8")
+      filename = unicode(filename).encode("utf-8")
+      filename = ''.join([nowtimestamp , filename])
 
       if bool(filename):
         filepath = os.path.join(attachmentpath, filename)
+	print filepath
         if not os.path.isfile(filepath):
           fp = open(filepath, "wb")
           fp.write(part.get_payload(decode=True))
@@ -199,7 +209,7 @@ def fetching_gamil(user, password):
             print "Mail with uuid [%s] is cached " %(eid)
             continue
           else:
-          # 如果没有则先缓存图片再发送图片到网站
+            # 如果没有则先缓存图片再发送图片到网站
             data = cache_mail(eid, gmail_mail, filepath)
 
             if data is not None:
@@ -210,8 +220,16 @@ def fetching_gamil(user, password):
               # Subject
               subject = gmail_mail["Subject"]
               subject, encoding = decode_header(subject)[0]
-              ret = post_media_to_bankwall(desc=subject, user=mfrom, media=filepath)
-              reply_mail(gmail_mail, ret)
+              try:
+                ret = post_media_to_bankwall(desc=subject, user=mfrom, media=filepath)
+              except Exception as e:
+                # 错误后 要删除cache 文件
+                rm_cache_mail(eid)
+                print e
+                ret = None
+              finally:
+                if ret is not None:
+                    reply_mail(gmail_mail, ret)
         else:
           print "File [%s] is not media " %(filepath)
   conn.close()
@@ -259,8 +277,14 @@ if __name__ == "__main__":
 
   except Exception as e:
     print "Exception when fetch email !"
+    exc_type, exc_value, exc_traceback = sys.exc_info()
+    import traceback
+    traceback.print_exception(exc_type, exc_value, exc_traceback)
+
     os.unlink(".lock")
     print e
+  finally:
+      pass
 
     
   
