@@ -61,7 +61,7 @@ def is_media(file):
   cmd = "/usr/bin/file -b --mime %s" % (file)
   mime = subprocess.Popen(cmd, shell=True, \
   stdout = subprocess.PIPE).communicate()[0]
-  mime = mime.split(";")[0].lstrip();
+  mime = mime.split(";")[0].strip();
   print "mime is [%s]" %(mime)
   
   if mime in ["image/jpeg", "image/png", "image/jpg", "image/gif", "video/mov", "video/wmv", "video/mp4", "video/avi", "video/3gp", "video/mpeg", "video/mpg", "application/octet-stream", "video/3gpp", "video/quicktime"]:
@@ -201,7 +201,6 @@ def fetching_gamil(user, password, boxname = "inbox"):
 
       if bool(filename):
         filepath = os.path.join(attachmentpath, filename)
-	print filepath
         if not os.path.isfile(filepath):
             try:                
               fp = open(filepath, "wb")
@@ -271,9 +270,23 @@ def load_config():
     print "setting.ini is not exists!"
     sys.exit(1)
 
+def exit_handler():
+  lock_file = os.path.join(basepath, ".lock")
+  if os.path.isfile(lock_file):
+    os.remove(lock_file)
+  print "Cleaned something!"
+
 if __name__ == "__main__":
-  config = load_config()
-  account = dict(config.items("mailaccount"))
+  import atexit
+  atexit.register(exit_handler)
+  try:
+    config = load_config()
+    account = dict(config.items("mailaccount"))
+  except Exception as e:
+    print "Exception: %s" %(e)
+    sys.exit(1)
+  finally:
+    pass
 
   # There's only one process do fetch job in each time
   if not os.path.isfile(".lock"):
